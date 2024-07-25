@@ -26,6 +26,7 @@ class _ARObjectsScreenState extends State<ARObjectsScreen> {
   ARNode? localObjectNode;
   ARNode? webObjectNode;
   bool isAdd = false;
+  bool isPermissionGranted = false;
 
   @override
   void initState() {
@@ -35,8 +36,43 @@ class _ARObjectsScreenState extends State<ARObjectsScreen> {
 
   Future<void> _requestCameraPermission() async {
     var status = await Permission.camera.status;
-    if (!status.isGranted) {
-      await Permission.camera.request();
+    if (status.isGranted) {
+      setState(() {
+        isPermissionGranted = true;
+      });
+    } else if (status.isDenied) {
+      // Request permission if not already granted
+      var newStatus = await Permission.camera.request();
+      if (newStatus.isGranted) {
+        setState(() {
+          isPermissionGranted = true;
+        });
+      } else {
+        // Handle the case where permission is denied permanently
+        setState(() {
+          isPermissionGranted = false;
+        });
+      }
+    } else {
+      // Handle other cases like 'PermanentlyDenied' if needed
+      setState(() {
+        isPermissionGranted = false;
+      });
+    }
+  }
+
+  Future<void> _requestPermissionAgain() async {
+    var newStatus = await Permission.camera.request();
+    if (newStatus.isGranted) {
+      setState(() {
+        isPermissionGranted = true;
+      });
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Camera permission is required for AR functionality."),
+        ),
+      );
     }
   }
 
@@ -45,13 +81,29 @@ class _ARObjectsScreenState extends State<ARObjectsScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(),
-      body: ARView(onARViewCreated: onARViewCreated),
-      floatingActionButton: FloatingActionButton(
-        onPressed: widget.isLocal
-            ? onLocalObjectButtonPressed
-            : onWebObjectAtButtonPressed,
-        child: Icon(isAdd ? Icons.remove : Icons.add),
-      ),
+      body: isPermissionGranted
+          ? ARView(onARViewCreated: onARViewCreated)
+          : Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text('Camera permission is required.'),
+                  SizedBox(height: 20),
+                  ElevatedButton(
+                    onPressed: _requestPermissionAgain,
+                    child: Text('Grant Permission'),
+                  ),
+                ],
+              ),
+            ),
+      floatingActionButton: isPermissionGranted
+          ? FloatingActionButton(
+              onPressed: widget.isLocal
+                  ? onLocalObjectButtonPressed
+                  : onWebObjectAtButtonPressed,
+              child: Icon(isAdd ? Icons.remove : Icons.add),
+            )
+          : null,
     );
   }
 
@@ -63,17 +115,20 @@ class _ARObjectsScreenState extends State<ARObjectsScreen> {
     this.arSessionManager = arSessionManager;
     this.arObjectManager = arObjectManager;
 
-    this.arSessionManager.onInitialize(
-          showFeaturePoints: false,
-          showPlanes: true,
-          customPlaneTexturePath: "assets/triangle.png",
-          showWorldOrigin: true,
-          handleTaps: false,
-        );
-    this.arObjectManager.onInitialize();
+    // Initialize AR session only if permission is granted
+    if (isPermissionGranted) {
+      this.arSessionManager.onInitialize(
+            showFeaturePoints: false,
+            showPlanes: true,
+            customPlaneTexturePath: "assets/triangle.png",
+            showWorldOrigin: true,
+            handleTaps: false,
+          );
+      this.arObjectManager.onInitialize();
+    }
   }
 
-  Future onLocalObjectButtonPressed() async {
+  Future<void> onLocalObjectButtonPressed() async {
     if (localObjectNode != null) {
       arObjectManager.removeNode(localObjectNode!);
       localObjectNode = null;
@@ -89,7 +144,7 @@ class _ARObjectsScreenState extends State<ARObjectsScreen> {
     }
   }
 
-  Future onWebObjectAtButtonPressed() async {
+  Future<void> onWebObjectAtButtonPressed() async {
     setState(() {
       isAdd = !isAdd;
     });
